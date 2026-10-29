@@ -460,6 +460,21 @@ input[type="date"] {
 [hidden] {
   display: none !important;
 }
+.textarea.tall {
+  min-height: 220px;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+.statusSelect.small {
+  width: auto;
+  padding: 6px 30px 6px 10px;
+  font-size: 13px;
+  border-radius: 10px;
+}
+.badge.sent {
+  color: var(--wa);
+  border-color: rgba(37, 211, 102, 0.3);
+}
 .btn.block {
   width: 100%;
   justify-content: center;

@@ -12,13 +12,14 @@ A small order tracker in the Dawn Sogni black-and-white style. It runs entirely 
 - Multiple payments per order (UPI, cash, bank, card) with paid / balance tracking
 - Status flow: Order placed → In production → Ready → Out for delivery → Delivered (or Cancelled)
 - Notes on every order
-- **WhatsApp "out for delivery"** button: opens WhatsApp with a ready message to the customer and marks the order out for delivery. Disabled when the order has no number.
+- **WhatsApp updates that match the status**: a separate message for Order placed, In production, Ready, Out for delivery, Delivered and Cancelled. Creating an order or changing its status asks whether to WhatsApp the customer, with the message ready to check or edit. The WhatsApp button on each card resends the current status message, and a "✓ WhatsApp sent" badge shows when it went out. The button is disabled when the order has no number.
+- Change status straight from the order card
 - Dashboard totals: active, delivered, order value, collected, pending payments
 - Backup: export / import JSON, export CSV for Excel
 
 ## WhatsApp sending
 
-The button uses a `wa.me` link, so WhatsApp sends from **whichever account is logged in on the device** you click it from. Open the tracker on the phone (or WhatsApp Web) signed in as the business number 9920279905. The message template can be edited in Settings.
+The button uses a `wa.me` link, so WhatsApp sends from **whichever account is logged in on the device** you click it from. Open the tracker on the phone (or WhatsApp Web) signed in as the business number 9920279905. The message for each status can be edited in Settings.
 
 Fully automatic sending (no tap needed) would require the WhatsApp Business Cloud API and a server, which this browser-only app deliberately avoids.
 

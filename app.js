@@ -5,14 +5,27 @@
   const ORDERS_KEY = "ds-tracker:orders";
   const SETTINGS_KEY = "ds-tracker:settings";
 
-  const DEFAULT_TEMPLATE =
-    "Hi {name}! ✨\n\nYour Dawn Sogni order *{code}* is out for delivery and will reach you soon.\n\nItems: {items}\nTotal: {total}\nBalance due: {balance}\n\nThank you for shopping with Dawn Sogni 🖤";
+  // One WhatsApp message per order status.
+  const DEFAULT_TEMPLATES = {
+    pending:
+      "Hi {name}! 🖤\n\nThank you for ordering with Dawn Sogni. Your order *{code}* is confirmed.\n\nItems: {items}\nTotal: {total}\nPaid: {paid}\nBalance due: {balance}\n\nWe'll keep you posted at every step.",
+    production:
+      "Hi {name}! ✂️\n\nYour Dawn Sogni order *{code}* is now in production. We'll message you as soon as it's ready.",
+    ready:
+      "Hi {name}! ✨\n\nGood news, your Dawn Sogni order *{code}* is ready.\n\nItems: {items}\nBalance due: {balance}\n\nWe'll share delivery details shortly.",
+    out:
+      "Hi {name}! ✨\n\nYour Dawn Sogni order *{code}* is out for delivery and will reach you soon.\n\nItems: {items}\nTotal: {total}\nBalance due: {balance}\n\nThank you for shopping with Dawn Sogni 🖤",
+    delivered:
+      "Hi {name}! 🖤\n\nYour Dawn Sogni order *{code}* has been delivered. We hope you love it!\n\nTag @dawn.sogni on Instagram when you wear it, we'd love to see.",
+    cancelled:
+      "Hi {name},\n\nYour Dawn Sogni order *{code}* has been cancelled. If you have any questions, just reply to this message."
+  };
 
   const DEFAULT_SETTINGS = {
     senderPhone: "9920279905",
     codePrefix: "DS-",
     nextSeq: 1,
-    template: DEFAULT_TEMPLATE
+    templates: DEFAULT_TEMPLATES
   };
 
   const STATUSES = [
@@ -90,7 +103,17 @@
 
   migrateStoredOrders();
   let orders = load(ORDERS_KEY, []);
-  let settings = { ...DEFAULT_SETTINGS, ...load(SETTINGS_KEY, {}) };
+  function normalizeSettings(saved) {
+    const s = { ...DEFAULT_SETTINGS, ...saved };
+    s.templates = { ...DEFAULT_TEMPLATES, ...(saved && saved.templates) };
+    // Up to 1.1.0 there was a single "out for delivery" template.
+    if (s.template) s.templates.out = s.template;
+    delete s.template;
+    return s;
+  }
+
+  let settings = normalizeSettings(load(SETTINGS_KEY, {}));
+  save(SETTINGS_KEY, settings);
   const persistOrders = () => save(ORDERS_KEY, orders);
   const persistSettings = () => save(SETTINGS_KEY, settings);
 
@@ -221,8 +244,8 @@
             ? `<span class="badge due">Part paid</span>`
             : `<span class="badge due">Unpaid</span>`;
     const late = !isClosed(o) && o.dueDate && o.dueDate < today() ? `<span class="badge late">Overdue</span>` : "";
-    const wa = waNumber(o.phone);
-    const canWa = !!wa && !isClosed(o);
+    const canWa = !!waNumber(o.phone);
+    const sent = o.notified && o.notified[o.status] ? `<span class="badge sent">✓ WhatsApp sent</span>` : "";
     const meta = [
       itemsText(o) || "No items added",
       o.phone ? esc(o.phone) : "No WhatsApp number",
@@ -241,7 +264,7 @@
             <span class="code">${esc(o.code)}</span>
             <span class="customer">${esc(o.customer)}</span>
             <span class="badge s-${o.status}">${statusLabel(o.status)}</span>
-            ${pay}${late}
+            ${pay}${late}${sent}
           </div>
           <div class="orderMeta">${meta}</div>
           ${o.notes ? `<div class="orderNotes">📝 ${esc(o.notes)}</div>` : ""}
@@ -253,14 +276,12 @@
           }
         </div>
         <div class="orderActions">
-          ${
-            isClosed(o)
-              ? ""
-              : `<button class="btn small wa" data-act="wa" ${canWa ? "" : "disabled"} title="${
-                  canWa ? "Send 'out for delivery' on WhatsApp" : "Add a WhatsApp number to enable"
-                }">WhatsApp: out for delivery</button>
-                 <button class="btn small" data-act="delivered">Mark delivered</button>`
-          }
+          <select class="input small statusSelect" data-act="status" aria-label="Change status">
+            ${STATUSES.map((s) => `<option value="${s.key}" ${s.key === o.status ? "selected" : ""}>${s.label}</option>`).join("")}
+          </select>
+          <button class="btn small wa" data-act="wa" ${canWa ? "" : "disabled"} title="${
+            canWa ? `Send the '${statusLabel(o.status)}' message on WhatsApp` : "Add a WhatsApp number to enable"
+          }">WhatsApp</button>
           <button class="btn small" data-act="edit">Edit</button>
         </div>
       </article>`;
@@ -395,25 +416,30 @@
       form.code.focus();
       return;
     }
+    let saved;
+    let statusChanged;
     if (editingId) {
-      const o = orders.find((x) => x.id === editingId);
-      if (data.status === "delivered" && o.status !== "delivered") data.deliveredAt = today();
+      saved = orders.find((x) => x.id === editingId);
+      statusChanged = data.status !== saved.status;
+      if (data.status === "delivered" && saved.status !== "delivered") data.deliveredAt = today();
       if (data.status !== "delivered") data.deliveredAt = "";
-      Object.assign(o, data, { updatedAt: Date.now() });
+      Object.assign(saved, data, { updatedAt: Date.now() });
       toast("Order updated");
     } else {
-      const o = { id: uid(), createdAt: Date.now(), updatedAt: Date.now(), ...data };
-      if (o.status === "delivered") o.deliveredAt = today();
-      orders.push(o);
+      saved = { id: uid(), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      statusChanged = true;
+      if (saved.status === "delivered") saved.deliveredAt = today();
+      orders.push(saved);
       // Advance the counter past auto-generated codes.
       const m = data.code.match(/(\d+)$/);
       if (data.code.startsWith(settings.codePrefix) && m) settings.nextSeq = Math.max(settings.nextSeq, parseInt(m[1], 10) + 1);
       persistSettings();
-      toast(`Order ${o.code} created`);
+      toast(`Order ${saved.code} created`);
     }
     persistOrders();
     dialog.close();
     render();
+    if (statusChanged && waNumber(saved.phone)) openNotify(saved);
   });
 
   $("#deleteOrderBtn").addEventListener("click", () => {
@@ -431,26 +457,48 @@
   // ---------- WhatsApp ----------
   function buildMessage(o) {
     const bal = balance(o);
-    return (settings.template || DEFAULT_TEMPLATE)
+    return (settings.templates[o.status] || DEFAULT_TEMPLATES[o.status] || "")
       .replaceAll("{name}", o.customer.split(" ")[0] || o.customer)
       .replaceAll("{code}", o.code)
       .replaceAll("{items}", itemsText(o) || "-")
       .replaceAll("{total}", inr(total(o)))
-      .replaceAll("{balance}", bal > 0 ? inr(bal) : "₹0 (fully paid)");
+      .replaceAll("{paid}", inr(paid(o)))
+      .replaceAll("{balance}", bal > 0 ? inr(bal) : "₹0 (fully paid)")
+      .replaceAll("{status}", statusLabel(o.status));
   }
 
-  function sendOutForDelivery(o) {
-    const n = waNumber(o.phone);
-    if (!n) return toast("No valid WhatsApp number on this order");
-    window.open(`https://wa.me/${n}?text=${encodeURIComponent(buildMessage(o))}`, "_blank", "noopener");
-    if (o.status !== "out") {
-      o.status = "out";
-      o.notifiedAt = Date.now();
-      o.updatedAt = Date.now();
-      persistOrders();
-      render();
-      toast(`${o.code} marked out for delivery`);
-    }
+  // Preview the message for the order's current status; it can be tweaked before sending.
+  const notifyDialog = $("#notifyDialog");
+  let notifyOrder = null;
+
+  function openNotify(o) {
+    notifyOrder = o;
+    $("#notifyTitle").textContent = `Send "${statusLabel(o.status)}" message?`;
+    $("#notifyTo").textContent = `To ${o.customer} · ${o.phone}`;
+    $("#notifyText").value = buildMessage(o);
+    notifyDialog.showModal();
+  }
+
+  $("#notifySendBtn").addEventListener("click", () => {
+    const o = notifyOrder;
+    const n = o && waNumber(o.phone);
+    if (!n) return notifyDialog.close();
+    window.open(`https://wa.me/${n}?text=${encodeURIComponent($("#notifyText").value)}`, "_blank", "noopener");
+    o.notified = { ...o.notified, [o.status]: Date.now() };
+    persistOrders();
+    notifyDialog.close();
+    render();
+  });
+
+  function setStatus(o, status) {
+    if (o.status === status) return;
+    o.status = status;
+    o.deliveredAt = status === "delivered" ? today() : "";
+    o.updatedAt = Date.now();
+    persistOrders();
+    render();
+    toast(`${o.code}: ${statusLabel(status)}${status === "delivered" && balance(o) > 0 ? ` · ${inr(balance(o))} still due` : ""}`);
+    if (waNumber(o.phone)) openNotify(o);
   }
 
   // ---------- List interactions ----------
@@ -459,17 +507,15 @@
     if (!card) return;
     const o = orders.find((x) => x.id === card.dataset.id);
     const act = e.target.closest("[data-act]")?.dataset.act;
-    if (act === "wa") return sendOutForDelivery(o);
-    if (act === "delivered") {
-      o.status = "delivered";
-      o.deliveredAt = today();
-      o.updatedAt = Date.now();
-      persistOrders();
-      render();
-      return toast(`${o.code} delivered${balance(o) > 0 ? ` · ${inr(balance(o))} still due` : ""}`);
-    }
+    if (act === "wa") return openNotify(o);
+    if (act === "status") return;
     if (e.target.closest("button")?.disabled) return;
     openOrder(o);
+  });
+  $("#orderList").addEventListener("change", (e) => {
+    if (e.target.dataset.act !== "status") return;
+    const o = orders.find((x) => x.id === e.target.closest(".orderCard").dataset.id);
+    setStatus(o, e.target.value);
   });
 
   $("#tabs").addEventListener("click", (e) => {
@@ -490,15 +536,32 @@
   $("#settingsBtn").addEventListener("click", () => {
     sForm.senderPhone.value = settings.senderPhone;
     sForm.codePrefix.value = settings.codePrefix;
-    sForm.template.value = settings.template;
+    draftTemplates = { ...settings.templates };
+    sForm.templateStatus.value = "out";
+    sForm.template.value = draftTemplates.out;
     $("#appVersion").textContent = `Version ${APP_VERSION}`;
     settingsDialog.showModal();
   });
+
+  // One textarea edits whichever status is picked; edits are kept until Save.
+  let draftTemplates = {};
+  sForm.templateStatus.innerHTML = STATUSES.map((s) => `<option value="${s.key}">${s.label}</option>`).join("");
+  sForm.templateStatus.addEventListener("change", () => {
+    sForm.template.value = draftTemplates[sForm.templateStatus.value];
+  });
+  sForm.template.addEventListener("input", () => {
+    draftTemplates[sForm.templateStatus.value] = sForm.template.value;
+  });
+  $("#resetTemplateBtn").addEventListener("click", () => {
+    const k = sForm.templateStatus.value;
+    draftTemplates[k] = sForm.template.value = DEFAULT_TEMPLATES[k];
+  });
+
   sForm.addEventListener("submit", (e) => {
     e.preventDefault();
     settings.senderPhone = sForm.senderPhone.value.trim();
     settings.codePrefix = sForm.codePrefix.value.trim() || DEFAULT_SETTINGS.codePrefix;
-    settings.template = sForm.template.value.trim() || DEFAULT_TEMPLATE;
+    for (const s of STATUSES) settings.templates[s.key] = (draftTemplates[s.key] || "").trim() || DEFAULT_TEMPLATES[s.key];
     persistSettings();
     settingsDialog.close();
     toast("Settings saved");
@@ -557,7 +620,7 @@
         orders = [...byCode.values()];
       }
       orders.forEach((o) => (o.id ||= uid()));
-      if (data.settings) settings = { ...settings, ...data.settings };
+      if (data.settings) settings = normalizeSettings({ ...settings, ...data.settings });
       persistOrders();
       persistSettings();
       settingsDialog.close();

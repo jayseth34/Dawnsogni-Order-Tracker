@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#000000" />
     <title>Dawn Sogni | Order Tracker</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=1.1.0" />
+    <link rel="stylesheet" href="styles.css?v=1.2.0" />
   </head>
   <body>
     <header class="siteHeader">
@@ -149,11 +149,13 @@
           <span class="label">Order code prefix</span>
           <input class="input mono" name="codePrefix" />
         </label>
-        <label class="field">
-          <span class="label">"Out for delivery" message</span>
-          <textarea class="textarea" name="template"></textarea>
-          <span class="hint">Placeholders: {name} {code} {items} {total} {balance}</span>
-        </label>
+        <div class="sectionHead">
+          <span class="label">WhatsApp message for each status</span>
+          <button type="button" class="btn small" id="resetTemplateBtn">Reset to default</button>
+        </div>
+        <select class="input" name="templateStatus" aria-label="Status"></select>
+        <textarea class="textarea tall" name="template" aria-label="Message"></textarea>
+        <span class="hint">Placeholders: {name} {code} {items} {total} {paid} {balance} {status}</span>
         <p class="hint">
           WhatsApp opens with the message ready to send. It sends from whichever WhatsApp account is logged in on this
           device, so use this tracker on the phone/WhatsApp Web signed in as your business number.
@@ -176,6 +178,26 @@
           <button type="submit" class="btn primary">Save settings</button>
         </div>
       </form>
+    </dialog>
+
+    <!-- WhatsApp message for the current status -->
+    <dialog id="notifyDialog" class="dialog narrow">
+      <div class="dialogBody">
+        <div class="dialogHead">
+          <div>
+            <div class="eyebrow">WhatsApp update</div>
+            <h2 class="h2" id="notifyTitle">Send message?</h2>
+          </div>
+          <button type="button" class="iconBtn" data-close aria-label="Close">&times;</button>
+        </div>
+        <p class="hint" id="notifyTo"></p>
+        <textarea class="textarea tall" id="notifyText" aria-label="Message"></textarea>
+        <p class="hint">Opens WhatsApp with this message. It sends from the WhatsApp account logged in on this device.</p>
+        <div class="dialogFoot">
+          <button type="button" class="btn" data-close>Skip</button>
+          <button type="button" class="btn wa" id="notifySendBtn">Send on WhatsApp</button>
+        </div>
+      </div>
     </dialog>
 
     <!-- New version notice -->
@@ -226,6 +248,6 @@
     </template>
 
     <!-- Releasing an update: bump ?v= on the styles.css and app.js tags, and "version" in version.json. -->
-    <script src="app.js?v=1.1.0"></script>
+    <script src="app.js?v=1.2.0"></script>
   </body>
 </html>
