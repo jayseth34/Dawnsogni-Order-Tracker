@@ -42,6 +42,53 @@
     }
   }
 
+  // ---------- Versions ----------
+  // App version comes from the ?v= on this script's tag in index.html (kept in sync with version.json).
+  const APP_VERSION = (document.currentScript && new URL(document.currentScript.src).searchParams.get("v")) || "0.0.0";
+  const SEEN_VERSION_KEY = "ds-tracker:seenVersion";
+
+  // Format of the saved orders. When it changes, bump DATA_VERSION and add a step that
+  // converts version N-1 into N; old data is upgraded on load, and backups on import.
+  const DATA_VERSION = 1;
+  const DATA_VERSION_KEY = "ds-tracker:dataVersion";
+  const MIGRATIONS = {
+    // 2: (orders) => orders.map((o) => ({ ...o, courier: o.courier || "" })),
+  };
+
+  function migrate(list, fromVersion) {
+    let data = list;
+    for (let v = (fromVersion || 1) + 1; v <= DATA_VERSION; v++) {
+      if (MIGRATIONS[v]) data = MIGRATIONS[v](data);
+    }
+    return data;
+  }
+
+  function migrateStoredOrders() {
+    try {
+      const from = parseInt(localStorage.getItem(DATA_VERSION_KEY) || "1", 10);
+      if (from < DATA_VERSION) {
+        const raw = localStorage.getItem(ORDERS_KEY);
+        // Keep an untouched copy so a bad migration can be undone.
+        if (raw) localStorage.setItem(`ds-tracker:before-data-v${DATA_VERSION}`, raw);
+        localStorage.setItem(ORDERS_KEY, JSON.stringify(migrate(raw ? JSON.parse(raw) : [], from)));
+      }
+      localStorage.setItem(DATA_VERSION_KEY, String(DATA_VERSION));
+    } catch {
+      // Storage blocked or unreadable; the app falls back to an empty list.
+    }
+  }
+
+  const cmpVersion = (a, b) => {
+    const pa = String(a).split(".").map(Number);
+    const pb = String(b).split(".").map(Number);
+    for (let i = 0; i < 3; i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return Math.sign(d);
+    }
+    return 0;
+  };
+
+  migrateStoredOrders();
   let orders = load(ORDERS_KEY, []);
   let settings = { ...DEFAULT_SETTINGS, ...load(SETTINGS_KEY, {}) };
   const persistOrders = () => save(ORDERS_KEY, orders);
@@ -444,6 +491,7 @@
     sForm.senderPhone.value = settings.senderPhone;
     sForm.codePrefix.value = settings.codePrefix;
     sForm.template.value = settings.template;
+    $("#appVersion").textContent = `Version ${APP_VERSION}`;
     settingsDialog.showModal();
   });
   sForm.addEventListener("submit", (e) => {
@@ -464,10 +512,19 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
-  $("#exportJsonBtn").addEventListener("click", () => {
-    const payload = { app: "dawnsogni-order-tracker", version: 1, exportedAt: new Date().toISOString(), settings, orders };
+  function exportBackup() {
+    const payload = {
+      app: "dawnsogni-order-tracker",
+      version: 1,
+      appVersion: APP_VERSION,
+      dataVersion: DATA_VERSION,
+      exportedAt: new Date().toISOString(),
+      settings,
+      orders
+    };
     download(`dawnsogni-orders-${today()}.json`, JSON.stringify(payload, null, 2), "application/json");
-  });
+  }
+  $("#exportJsonBtn").addEventListener("click", exportBackup);
 
   $("#exportCsvBtn").addEventListener("click", () => {
     const cols = ["Code", "Order date", "Customer", "Phone", "Address", "Items", "Status", "Due date", "Delivered on", "Total", "Paid", "Balance", "Notes"];
@@ -486,8 +543,9 @@
     if (!file) return;
     try {
       const data = JSON.parse(await file.text());
-      const incoming = Array.isArray(data) ? data : data.orders;
-      if (!Array.isArray(incoming)) throw new Error("bad file");
+      if (!Array.isArray(data) && !Array.isArray(data.orders)) throw new Error("bad file");
+      if (data.dataVersion > DATA_VERSION) return toast("This backup is from a newer version — reload the page first");
+      const incoming = migrate(Array.isArray(data) ? data : data.orders, data.dataVersion || 1);
       const replace = confirm(
         `Import ${incoming.length} orders.\n\nOK = replace all current orders (${orders.length})\nCancel = merge (orders with the same code are updated)`
       );
@@ -510,5 +568,99 @@
     }
   });
 
+  // ---------- New version notice ----------
+  const updateDialog = $("#updateDialog");
+  let pendingVersion = null;
+  let dismissedVersion = null;
+
+  async function fetchLatest() {
+    try {
+      const res = await fetch(`version.json?t=${Date.now()}`, { cache: "no-store" });
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function showUpdate(mode, version, notes) {
+    const n = orders.length;
+    const ordersText = `${n} order${n === 1 ? "" : "s"}`;
+    pendingVersion = mode === "available" ? version : null;
+    $("#updateEyebrow").textContent = mode === "available" ? "Update available" : "Updated";
+    $("#updateTitle").textContent = mode === "available" ? `Version ${version} is ready` : `Now on version ${version}`;
+    $("#updateText").textContent =
+      mode === "available"
+        ? `Download a backup of your ${ordersText} first, then update. Your orders stay saved in this browser either way.`
+        : `The tracker was just updated. Download a fresh backup of your ${ordersText} to keep a safe copy.`;
+    $("#updateNotes").innerHTML = (notes || []).map((t) => `<li>${esc(t)}</li>`).join("");
+    const backupBtn = $("#updateBackupBtn");
+    backupBtn.textContent = `Download backup (${ordersText})`;
+    backupBtn.classList.remove("done");
+    $("#updateNowBtn").hidden = mode !== "available";
+    $("#updateLaterBtn").textContent = mode === "available" ? "Later" : "Continue";
+    if (!updateDialog.open) updateDialog.showModal();
+  }
+
+  $("#updateBackupBtn").addEventListener("click", (e) => {
+    exportBackup();
+    e.currentTarget.textContent = "✓ Backup downloaded";
+    e.currentTarget.classList.add("done");
+  });
+  $("#updateLaterBtn").addEventListener("click", () => {
+    if (pendingVersion) dismissedVersion = pendingVersion;
+    updateDialog.close();
+  });
+  $("#updateNowBtn").addEventListener("click", () => {
+    // Already backed up here, so skip the "updated" notice after the reload.
+    try {
+      localStorage.setItem(SEEN_VERSION_KEY, pendingVersion);
+    } catch {}
+    location.replace(`${location.pathname}?v=${encodeURIComponent(pendingVersion)}`);
+  });
+  // Escape would close it without recording "Later"; treat it the same.
+  updateDialog.addEventListener("cancel", () => {
+    if (pendingVersion) dismissedVersion = pendingVersion;
+  });
+
+  // A newer version was published while this page is open (or cached).
+  async function checkForUpdate() {
+    if (document.querySelector("dialog[open]")) return; // never interrupt an edit
+    const latest = await fetchLatest();
+    if (!latest || cmpVersion(latest.version, APP_VERSION) <= 0 || latest.version === dismissedVersion) return;
+    if (!orders.length) {
+      // Nothing to back up: reload straight away, but only once per version in case the old page is still cached.
+      try {
+        if (sessionStorage.getItem("ds-tracker:reloadedFor") === latest.version) return;
+        sessionStorage.setItem("ds-tracker:reloadedFor", latest.version);
+      } catch {
+        return;
+      }
+      return location.replace(`${location.pathname}?v=${encodeURIComponent(latest.version)}`);
+    }
+    showUpdate("available", latest.version, latest.notes);
+  }
+
+  // This page load is the first since an update.
+  async function checkJustUpdated() {
+    let seen = null;
+    try {
+      seen = localStorage.getItem(SEEN_VERSION_KEY);
+      if (!seen || cmpVersion(APP_VERSION, seen) > 0) localStorage.setItem(SEEN_VERSION_KEY, APP_VERSION);
+    } catch {
+      return;
+    }
+    // Before 1.1.0 nothing recorded the version, so existing orders with no record mean an update.
+    const updated = seen ? cmpVersion(APP_VERSION, seen) > 0 : orders.length > 0;
+    if (!updated || !orders.length) return;
+    const latest = await fetchLatest();
+    showUpdate("updated", APP_VERSION, latest && latest.version === APP_VERSION ? latest.notes : []);
+  }
+
+  if (location.search) history.replaceState(null, "", location.pathname);
   render();
+  checkJustUpdated().then(checkForUpdate);
+  setInterval(checkForUpdate, 5 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkForUpdate();
+  });
 })();

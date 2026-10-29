@@ -26,6 +26,24 @@ Fully automatic sending (no tap needed) would require the WhatsApp Business Clou
 
 Everything lives in the browser you use. Clearing site data, or switching browser/device, means starting empty, so use **Settings → Export backup** regularly and **Import backup** on a new device.
 
+## Updates and safety
+
+When a new version is published, the app shows a popup with a one-tap **Download backup** button:
+
+- If the page is open when you push, it notices within 5 minutes (or as soon as you come back to the tab) and offers **Download backup → Update now**.
+- The first time the updated version opens, it shows what's new and offers a backup again.
+
+Saved orders carry a data-format version (`DATA_VERSION` in `app.js`). If the order format ever changes, add a step to `MIGRATIONS`; old data is upgraded on load (an untouched copy is kept in the browser first) and old backups are upgraded on import.
+
+### Releasing an update
+
+1. Make your changes.
+2. Bump the version in **three** places to the same number (e.g. `1.2.0`):
+   - `version.json` → `"version"` (and update `"notes"`, shown in the popup)
+   - `index.html` → `styles.css?v=…`
+   - `index.html` → `app.js?v=…`
+3. Commit and push to `main`. GitHub Pages redeploys in about a minute.
+
 ## Run locally
 
 Open `index.html`, or serve the folder:

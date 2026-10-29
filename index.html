@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#000000" />
     <title>Dawn Sogni | Order Tracker</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=1.1.0" />
   </head>
   <body>
     <header class="siteHeader">
@@ -172,10 +172,29 @@
         </div>
 
         <div class="dialogFoot">
-          <span></span>
+          <span class="hint" id="appVersion"></span>
           <button type="submit" class="btn primary">Save settings</button>
         </div>
       </form>
+    </dialog>
+
+    <!-- New version notice -->
+    <dialog id="updateDialog" class="dialog narrow">
+      <div class="dialogBody">
+        <div class="dialogHead">
+          <div>
+            <div class="eyebrow" id="updateEyebrow">Update</div>
+            <h2 class="h2" id="updateTitle">New version</h2>
+          </div>
+        </div>
+        <p class="updateText" id="updateText"></p>
+        <ul class="updateNotes" id="updateNotes"></ul>
+        <button type="button" class="btn primary block" id="updateBackupBtn">Download backup</button>
+        <div class="dialogFoot">
+          <button type="button" class="btn" id="updateLaterBtn">Later</button>
+          <button type="button" class="btn" id="updateNowBtn">Update now</button>
+        </div>
+      </div>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -206,6 +225,7 @@
       </div>
     </template>
 
-    <script src="app.js"></script>
+    <!-- Releasing an update: bump ?v= on the styles.css and app.js tags, and "version" in version.json. -->
+    <script src="app.js?v=1.1.0"></script>
   </body>
 </html>

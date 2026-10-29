@@ -426,6 +426,7 @@ input[type="date"] {
   background: var(--panel);
   color: var(--text);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  overflow-x: hidden;
 }
 .dialog.narrow {
   width: min(560px, calc(100vw - 32px));
@@ -434,8 +435,40 @@ input[type="date"] {
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(4px);
 }
-.dialog form {
+.dialog form,
+.dialogBody {
   padding: 22px 24px;
+}
+.updateText {
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 12px 0;
+}
+.updateNotes {
+  margin: 0 0 18px;
+  padding: 12px 14px 12px 30px;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.updateNotes:empty {
+  display: none;
+}
+[hidden] {
+  display: none !important;
+}
+.btn.block {
+  width: 100%;
+  justify-content: center;
+  padding: 12px 14px;
+}
+.btn.done {
+  background: rgba(110, 231, 168, 0.14);
+  border-color: rgba(110, 231, 168, 0.4);
+  color: var(--ok);
 }
 .dialogHead {
   display: flex;
